@@ -5,12 +5,18 @@ import {
   ContractError,
   ENVELOPE_SCHEMA,
   FEEDBACK_SCHEMA,
+  MAX_CONTENT_CHARS,
+  MAX_DIFF_CHARS,
+  MAX_RATIONALE_CHARS,
+  MAX_SUMMARY_CHARS,
   MAX_TITLE_CHARS,
   applyProposal,
   buildFeedback,
+  describeFailure,
   parseEnvelope,
   validateFeedback,
 } from "../src/contract.js";
+import { MAX_ENVELOPE_FILE_BYTES } from "../src/channels/file.js";
 
 const DOC = {
   id: "d1",
@@ -162,6 +168,39 @@ test("applyProposal reports a structurally broken diff as malformed without chan
   assert.equal(applied.opResults.length, 1);
   assert.equal(applied.opResults[0].status, "malformed");
   assert.match(applied.opResults[0].reason, /malformed hunk header/);
+  assert.equal("index" in applied.opResults[0], false);
+  assert.equal(applied.opResults[0].scope, "diff");
+});
+
+test("a whole-diff failure words as a malformed diff, not hunk #1", () => {
+  const applied = applyProposal({ content: "old" }, { kind: "unified", diff: "@@ not a header @@\n" });
+  const line = describeFailure(applied.opResults[0]);
+  assert.match(line, /^the diff is malformed: /);
+  assert.doesNotMatch(line, /hunk #/);
+
+  const hunkMiss = applyProposal(
+    { content: "alpha\nbeta\n" },
+    { kind: "unified", diff: "@@ -1,2 +1,2 @@\n gamma\n-beta\n+BETA\n" },
+  );
+  const hunkLine = describeFailure(hunkMiss.opResults[0]);
+  assert.match(hunkLine, /^hunk #1 context-mismatch/);
+  assert.doesNotMatch(hunkLine, /^the diff/);
+});
+
+test("the file-channel byte cap covers worst-case JSON encoding of every bounded field", () => {
+  const boundedBudget = MAX_CONTENT_CHARS + MAX_DIFF_CHARS + MAX_TITLE_CHARS
+    + MAX_SUMMARY_CHARS + MAX_RATIONALE_CHARS;
+  assert.equal(MAX_ENVELOPE_FILE_BYTES, boundedBudget * 6);
+  assert.ok(MAX_ENVELOPE_FILE_BYTES >= boundedBudget * 6);
+});
+
+test("an unknown proposal kind fails as a whole diff, not as hunk #1", () => {
+  const applied = applyProposal({ content: "old" }, { kind: "patch" });
+  assert.equal(applied.content, "old");
+  assert.equal("index" in applied.opResults[0], false);
+  assert.equal(applied.opResults[0].scope, "diff");
+  assert.match(applied.opResults[0].reason, /unknown proposal kind "patch"/);
+  assert.match(describeFailure(applied.opResults[0]), /^the diff is malformed: .*unknown proposal kind/);
 });
 
 test("buildFeedback maps hunk text onto the schema field names", () => {

@@ -2,12 +2,17 @@
  * File-drop channel: the AI exports an envelope@1 JSON file and the human drops it in.
  */
 
-import { MAX_CONTENT_CHARS } from "../contract.js";
+import {
+  MAX_CONTENT_CHARS, MAX_DIFF_CHARS, MAX_RATIONALE_CHARS, MAX_SUMMARY_CHARS, MAX_TITLE_CHARS,
+} from "../contract.js";
 
-// Four times the contract's content cap fits a full doc.content plus a full replace
-// proposal with room for ops and JSON escaping, while a stray multi-hundred-MB drop
-// fails fast instead of freezing the tab.
-export const MAX_ENVELOPE_FILE_BYTES = MAX_CONTENT_CHARS * 4;
+// Six bytes per UTF-16 code unit is the worst case for JSON-encoding a string, so the
+// budget covers every field the validator bounds — content, diff, title, summary and
+// rationale — at six bytes per unit each. requestId and doc.id carry no validator
+// bound, so no finite cap can cover an envelope carrying an oversized one of those;
+// a stray multi-hundred-MB drop still fails fast instead of freezing the tab.
+export const MAX_ENVELOPE_FILE_BYTES =
+  (MAX_CONTENT_CHARS + MAX_DIFF_CHARS + MAX_TITLE_CHARS + MAX_SUMMARY_CHARS + MAX_RATIONALE_CHARS) * 6;
 
 export function isEnvelopeFile(file) {
   return Boolean(file) && typeof file.name === "string" && /\.json$/i.test(file.name);

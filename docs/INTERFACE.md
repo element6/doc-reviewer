@@ -102,6 +102,10 @@ applies it strictly:
 - **One document per envelope.** A diff whose file headers describe more than one file is
   refused outright. Propose one document per envelope.
 - `\ No newline at end of file` and CRLF documents round-trip byte-for-byte.
+- **Line endings are normalised on apply.** The whole document is re-joined with a
+  single style — CRLF if the content contains any `\r\n`, otherwise LF — so applying a
+  hunk to a mixed-ending document also changes the endings of untouched lines.
+  Uniform-ending documents are unaffected.
 
 ```json
 {

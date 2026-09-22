@@ -3,7 +3,7 @@
  * the feedback payload back out. Sessions are in-memory by design; a refresh
  * loses them, so an unload guard fires while hunks are undecided.
  */
-import { parseEnvelope, applyProposal } from "./contract.js";
+import { parseEnvelope, applyProposal, describeFailure } from "./contract.js";
 import { extractBlocks } from "./html-blocks.js";
 import { hunksFromBlocks } from "./diff.js";
 import {
@@ -61,7 +61,7 @@ function clearError() {
 }
 
 /**
- * Persistent notice keyed by `id` (summary, rationale, failed ops) so re-renders
+ * Persistent notice keyed by `id` (summary, rationale, unapplied changes) so re-renders
  * do not resurrect dismissed content; transient notices use no id.
  */
 function notice(kind, text, id = null) {
@@ -399,7 +399,7 @@ function emitProposalNotices(envelope, opResults, warnings) {
   if (envelope.proposal.rationale) notice("info", `Rationale: ${envelope.proposal.rationale}`, "rationale");
   const failed = (opResults ?? []).filter((result) => result.status !== "applied");
   if (failed.length > 0) {
-    const lines = failed.map((result) => `hunk #${result.index + 1} ${result.status}${result.reason ? ` (${result.reason})` : ""}`);
+    const lines = failed.map(describeFailure);
     notice("error", `${failed.length} proposed change(s) did not apply: ${lines.join("; ")}. Those changes did not land.`, "unapplied");
   }
 }
