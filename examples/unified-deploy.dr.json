@@ -1,6 +1,6 @@
 {
   "schema": "doc-reviewer/envelope@1",
-  "requestId": "example-patch-1",
+  "requestId": "example-unified-1",
   "doc": {
     "id": "ops-checklist",
     "title": "Deploy checklist",
@@ -9,17 +9,12 @@
     "content": "Deploy checklist\n\n1. Run the test suite.\n2. Tag the release.\n3. Announce in the channel.\n\nRollback is documented in the runbook.\n"
   },
   "proposal": {
-    "kind": "patch",
+    "kind": "unified",
     "summary": "Added the migration step and pointed rollback at the right runbook.",
     "rationale": "A migration step was missing, and the rollback pointer was vague.",
-    "ops": [
-      { "op": "insertAfter", "find": "1. Run the test suite.\n", "content": "2. Run the migration.\n" },
-      { "op": "replace", "find": "documented in the runbook", "replace": "documented in ops/runbook.md" },
-      { "op": "delete", "find": "This text does not exist, so the operation reports not-found." }
-    ]
+    "diff": "diff --git a/deploy-old.md b/deploy-new.md\nindex 2fdece6..bd9f34b 100644\n--- a/deploy-old.md\n+++ b/deploy-new.md\n@@ -1,7 +1,8 @@\n Deploy checklist\n \n 1. Run the test suite.\n-2. Tag the release.\n-3. Announce in the channel.\n+2. Run the migration.\n+3. Tag the release.\n+4. Announce in the channel.\n \n-Rollback is documented in the runbook.\n+Rollback is documented in ops/runbook.md.\n"
   },
   "options": {
-    "allowDirectEdit": true,
-    "diffGranularity": "auto"
+    "allowDirectEdit": true
   }
 }

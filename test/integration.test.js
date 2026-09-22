@@ -106,6 +106,27 @@ test("the round-trip invariants also hold for an HTML document", () => {
   assert.equal(resultContent(decideAll(session, "rejected")), envelope.doc.content);
 });
 
+test("the round-trip invariants also hold for a unified proposal", () => {
+  const envelope = envelopeFor(MARKDOWN_BASE, MARKDOWN_PROPOSED);
+  envelope.proposal = {
+    kind: "unified",
+    summary: "Corrected dates.",
+    diff: [
+      "@@ -1,5 +1,5 @@",
+      " Release notes",
+      " ",
+      "-We shipped on Jan 3.",
+      "+We shipped on March 3.",
+      " ",
+      "-Known issues: none.",
+      "+Known issues: see the tracker.",
+    ].join("\n"),
+  };
+  const { session, envelope: parsed, proposedContent } = pipeline(envelope);
+  assert.equal(resultContent(decideAll(session, "accepted")), proposedContent);
+  assert.equal(resultContent(decideAll(session, "rejected")), parsed.doc.content);
+});
+
 test("a partially accepted review takes each hunk from its own side", () => {
   const { session, proposedContent } = pipeline(envelopeFor(MARKDOWN_BASE, MARKDOWN_PROPOSED));
   const accepted = decideAll(session, "rejected");
@@ -192,17 +213,23 @@ test("every hunk's parts satisfy the diff reconstruction invariant", () => {
   }
 });
 
-test("unresolved patch operations surface instead of silently vanishing", () => {
+test("a unified diff whose context misses is reported and not applied", () => {
   const envelope = envelopeFor(MARKDOWN_BASE, MARKDOWN_PROPOSED);
   envelope.proposal = {
-    kind: "patch",
-    ops: [
-      { op: "replace", find: "Jan 3", replace: "March 3" },
-      { op: "delete", find: "text that is not present" },
-    ],
+    kind: "unified",
+    diff: [
+      "@@ -3 +3 @@",
+      "-We shipped on Jan 3.",
+      "+We shipped on March 3.",
+      "@@ -5 +5 @@",
+      "-Known issues: nowhere at all.",
+      "+Known issues: see the tracker.",
+    ].join("\n"),
   };
-  const { opResults } = pipeline(envelope);
-  assert.deepEqual(opResults.map((entry) => entry.status), ["applied", "not-found"]);
+  const { opResults, proposedContent } = pipeline(envelope);
+  assert.deepEqual(opResults.map((entry) => entry.status), ["applied", "context-mismatch"]);
+  assert.ok(proposedContent.includes("March 3"), "the matching hunk must still apply");
+  assert.ok(proposedContent.includes("Known issues: none."), "the mismatched hunk must not apply");
 });
 
 test("the sanitizer policy refuses script vectors and allows prose markup", () => {

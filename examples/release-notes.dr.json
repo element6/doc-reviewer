@@ -15,7 +15,6 @@
     "content": "Release notes\n\nVersion 1.4 ships on March 3, and it focuses on the review flow.\n\nKnown issues: see the tracker.\n\nThe next release is planned for the spring.\n"
   },
   "options": {
-    "allowDirectEdit": true,
-    "diffGranularity": "auto"
+    "allowDirectEdit": true
   }
 }

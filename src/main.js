@@ -399,8 +399,8 @@ function emitProposalNotices(envelope, opResults, warnings) {
   if (envelope.proposal.rationale) notice("info", `Rationale: ${envelope.proposal.rationale}`, "rationale");
   const failed = (opResults ?? []).filter((result) => result.status !== "applied");
   if (failed.length > 0) {
-    const lines = failed.map((result) => `op #${result.index + 1} ${result.status}${result.reason ? ` (${result.reason})` : ""}`);
-    notice("error", `${failed.length} patch operation(s) did not apply: ${lines.join("; ")}. The AI's edit did not land.`, "ops");
+    const lines = failed.map((result) => `hunk #${result.index + 1} ${result.status}${result.reason ? ` (${result.reason})` : ""}`);
+    notice("error", `${failed.length} proposed change(s) did not apply: ${lines.join("; ")}. Those changes did not land.`, "unapplied");
   }
 }
 
@@ -408,11 +408,10 @@ function startSession(envelope, warnings = []) {
   const { content: proposedContent, opResults } = applyProposal(envelope.doc, envelope.proposal);
   baseBlocks = extractBlocks(envelope.doc.content, envelope.doc.format);
   propBlocks = extractBlocks(proposedContent, envelope.doc.format);
-  const granularity = envelope.options?.diffGranularity ?? "auto";
   let hunks = [];
   let diffFailure = null;
   try {
-    const diff = hunksFromBlocks(baseBlocks, propBlocks, { granularity, diffGranularity: granularity });
+    const diff = hunksFromBlocks(baseBlocks, propBlocks);
     if (diff.ok) hunks = diff.hunks;
     else diffFailure = diff.reason ?? "unknown reason";
   } catch (error) {
@@ -495,7 +494,7 @@ function startBlankDocument() {
     requestId: crypto.randomUUID ? crypto.randomUUID() : `local-${Date.now()}`,
     doc: { id: `blank-${Date.now()}`, title: "Untitled document", format, revision: 1, content: "" },
     proposal: { kind: "replace", content: "" },
-    options: { allowDirectEdit: true, diffGranularity: "auto" },
+    options: { allowDirectEdit: true },
   };
   loadEnvelopeInput(JSON.stringify(candidate));
 }

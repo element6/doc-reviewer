@@ -20,7 +20,7 @@ without changing it (see Deferred).
 AI  --envelope@1-->  channel (hash | url | file | paste | fs-dir)
                           |
                           v
-                     contract.js  (parse + validate + resolve patch)
+                     contract.js  (parse + validate + apply proposal)
                           |
                           v
               html-blocks.js -> diff.js -> hunks
@@ -53,19 +53,37 @@ Owned by the spine. Already implemented.
 ENVELOPE_SCHEMA = "doc-reviewer/envelope@1"
 FEEDBACK_SCHEMA = "doc-reviewer/feedback@1"
 FORMATS = ["html", "markdown", "text"]
-MAX_CONTENT_CHARS, MAX_TITLE_CHARS, MAX_COMMENT_CHARS, MAX_COMMENTS, MAX_OPS
+MAX_CONTENT_CHARS, MAX_DIFF_CHARS, MAX_TITLE_CHARS, MAX_SUMMARY_CHARS,
+MAX_RATIONALE_CHARS, MAX_COMMENT_CHARS, MAX_COMMENTS
 class ContractError extends Error { errors: [{path, message}] }
 
 parseEnvelope(input)        -> { ok: true, envelope, warnings } | { ok: false, errors }
-resolvePatch(base, ops)     -> { content, results: [{ index, status, reason? }] }
-applyProposal(doc, proposal)-> { content, opResults }
+applyProposal(doc, proposal)-> { content, opResults: [{ index, status, reason? }] }
 buildFeedback(input)        -> feedback object
 validateFeedback(raw)       -> { ok, errors }
 ```
 
-`status` is one of `"applied"`, `"not-found"`, `"ambiguous"`, `"invalid"`.
-Patch ops apply **sequentially to raw source text** for every format, each `find` must
-match exactly once in the content as it stands at that moment.
+`status` is one of `"applied"`, `"context-mismatch"`, `"malformed"`: a unified hunk that
+matched its declared lines, one that did not match the base there, and one whose declared
+counts disagree with its body. An envelope still carrying `ops`, or `kind: "patch"`, fails
+validation with a message naming `unified`. `applyProposal` short-circuits
+`kind: "replace"` (empty `opResults`) and delegates `kind: "unified"` to
+`src/unified.js` below.
+
+### `src/unified.js` — unified-diff engine, pure, node-testable
+
+```
+parseUnifiedDiff(diffText)  -> { ok: true, hunks } | { ok: false, errors: [{ message }] }
+applyUnifiedDiff(base, diffText)
+                            -> { ok: true, content, results: [{ index, status, reason? }] }
+                             | { ok: false, errors }
+```
+
+Applies `git diff` output for exactly one document. Each hunk is matched against the
+ORIGINAL base at the exact line its header declares — there is no fuzzy offset search, so
+a miss is reported as `context-mismatch` and that hunk does not land while the other
+hunks still do. A second `--- `/`+++ ` file-header pair is refused: one document per
+envelope. `\ No newline at end of file` and CRLF bases round-trip byte-for-byte.
 
 ### `src/diff.js` — pure, node-testable
 
@@ -75,7 +93,7 @@ DIFF_WORK_LIMIT = 4_000_000                        // writer/server.js:42, verba
 diffSegments(base, proposed, opts?) -> { ok: true, parts }
                                      | { ok: false, reason: "work-limit" | "too-long", parts: null }
 validDiff(base, proposed, parts) -> boolean        // writer/index.html:245 invariant
-hunksFromBlocks(baseBlocks, proposedBlocks, opts?) -> { ok, hunks, reason? }
+hunksFromBlocks(baseBlocks, proposedBlocks) -> { ok, hunks, reason? }
 ```
 
 `parts` is `[{ type: "keep" | "remove" | "add", text }]` — writer's segment contract.
@@ -225,7 +243,9 @@ is absent; no caller may assume success.
 ## Invariants
 
 1. Untrusted input never reaches `innerHTML` except through `sanitizeHtml`.
-2. A proposal that fails `validDiff` is reported as an error, never rendered as a diff.
+2. A change that cannot be applied exactly is reported, never guessed at: a unified
+   hunk whose context misses the base comes back `context-mismatch` and does not land,
+   and hunks that fail `validDiff` are reported as an error, never rendered as a diff.
 3. Rejecting every hunk reproduces `doc.content` byte-for-byte.
 4. Unknown `schema` versions are refused; unknown *fields* are ignored with a warning.
 5. No network request except the explicit `#src=` fetch, and no `eval`, `Function`, or

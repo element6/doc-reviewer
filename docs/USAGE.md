@@ -22,9 +22,10 @@
 
 - **Rendered vs source.** HTML starts in rendered mode and Markdown and plain text start
   in source mode. The toggle switches at any time; your decisions are preserved.
-- **Unresolved patch operations.** If the AI sent a `patch` whose `find` text was absent
-  or matched more than once, that change did not land. The page says so explicitly.
-  A repair is to ask the AI to re-send the change as `kind: "replace"`.
+- **Unapplied hunks.** If part of a unified diff does not match the document exactly,
+  that hunk is reported as `context-mismatch` (or `malformed`) and did not land; the rest
+  of the diff still applies. The page says so explicitly. A repair is to ask the AI to
+  re-send the change, or to hand-edit the text directly.
 - **Oversized diffs.** If a document is too large to diff reliably, the page falls back to
   whole-block replacement with a visible notice instead of freezing.
 - **Sessions are in-memory.** A reload loses the review. Use **Download** to keep a copy,
@@ -39,9 +40,11 @@ assume.
 ### Contract
 
 - [ ] A valid `replace` envelope from a dropped file loads and renders.
-- [ ] A valid `patch` envelope resolves and shows only the changed text.
-- [ ] A `patch` whose `find` matches nothing reports `not-found` and applies nothing.
-- [ ] A `patch` whose `find` matches twice reports `ambiguous` and applies nothing.
+- [ ] A valid `unified` envelope resolves and shows only the changed text.
+- [ ] A unified diff whose context does not match reports `context-mismatch` for that
+      hunk, applies it nowhere, and still applies the other hunks.
+- [ ] An envelope that still sends `ops`, or `kind: "patch"`, fails validation with a
+      message naming `unified`.
 - [ ] Malformed JSON, a missing `doc.title`, and an unknown `format` each produce a
       message naming the failing field.
 - [ ] `schema: "doc-reviewer/envelope@2"` is refused and names the supported version.

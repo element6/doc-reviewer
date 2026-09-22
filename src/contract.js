@@ -5,28 +5,30 @@
  * browser and under `node --test`. It is the interface spine: see architecture.md.
  */
 
+import { applyUnifiedDiff } from "./unified.js";
+
 export const ENVELOPE_SCHEMA = "doc-reviewer/envelope@1";
 export const FEEDBACK_SCHEMA = "doc-reviewer/feedback@1";
 
 export const FORMATS = ["html", "markdown", "text"];
 export const FEEDBACK_VERDICTS = ["accepted", "rejected", "changes-requested"];
 export const HUNK_DECISIONS = ["accepted", "rejected", "edited", "unresolved"];
-export const OP_KINDS = ["replace", "delete", "insertAfter", "insertBefore"];
 
 export const MAX_CONTENT_CHARS = 2_000_000;
+// A whole-document replacement as a diff carries both the old and the new text.
+export const MAX_DIFF_CHARS = 4_000_000;
 export const MAX_TITLE_CHARS = 300;
 export const MAX_SUMMARY_CHARS = 8_000;
 export const MAX_RATIONALE_CHARS = 8_000;
 export const MAX_COMMENT_CHARS = 8_000;
 export const MAX_COMMENTS = 500;
-export const MAX_OPS = 2_000;
 export const MAX_QUOTE_CHARS = 4_000;
 export const ANCHOR_CONTEXT_CHARS = 40;
 
 const KNOWN_ENVELOPE_KEYS = new Set(["schema", "requestId", "doc", "proposal", "options"]);
 const KNOWN_DOC_KEYS = new Set(["id", "title", "format", "revision", "content"]);
-const KNOWN_PROPOSAL_KEYS = new Set(["kind", "content", "ops", "summary", "rationale"]);
-const KNOWN_OPTION_KEYS = new Set(["allowDirectEdit", "diffGranularity"]);
+const KNOWN_PROPOSAL_KEYS = new Set(["kind", "content", "diff", "summary", "rationale"]);
+const KNOWN_OPTION_KEYS = new Set(["allowDirectEdit"]);
 const KNOWN_FEEDBACK_KEYS = new Set([
   "schema", "requestId", "doc", "verdict", "result", "hunks", "comments",
 ]);
@@ -48,11 +50,6 @@ const isNonEmptyString = (value) => isString(value) && value.length > 0;
 function fail(errors, path, message) {
   errors.push({ path, message });
   return undefined;
-}
-
-function excerpt(value) {
-  const flat = value.replace(/\s+/g, " ").trim();
-  return flat.length > 60 ? `${flat.slice(0, 57)}...` : flat;
 }
 
 function reportUnknownKeys(raw, known, prefix, warnings) {
@@ -103,30 +100,14 @@ function validateDoc(raw, errors, warnings) {
   return doc;
 }
 
-function validateOp(raw, index, errors) {
-  const path = `$.proposal.ops[${index}]`;
-  if (!isPlainObject(raw)) return fail(errors, path, "must be an object");
-  if (!OP_KINDS.includes(raw.op)) {
-    return fail(errors, `${path}.op`, `must be one of ${OP_KINDS.map((k) => `"${k}"`).join(", ")}`);
-  }
-  const find = expectString(raw, "find", `${path}.find`, {}, errors);
-  if (find === undefined) return undefined;
-  const op = { op: raw.op, find };
-  if (raw.op === "replace") {
-    if (!isString(raw.replace)) return fail(errors, `${path}.replace`, 'required for op "replace"');
-    op.replace = raw.replace;
-  }
-  if (raw.op === "insertAfter" || raw.op === "insertBefore") {
-    if (!isString(raw.content)) return fail(errors, `${path}.content`, `required for op "${raw.op}"`);
-    op.content = raw.content;
-  }
-  return op;
-}
-
 function validateProposal(raw, errors, warnings) {
   const proposal = {};
-  if (!["replace", "patch"].includes(raw.kind)) {
-    proposal.kind = fail(errors, "$.proposal.kind", 'must be "replace" or "patch"');
+  if (raw.ops !== undefined) {
+    // An AI sending the removed format must be told its replacement, not ignored.
+    fail(errors, "$.proposal.ops", 'no longer supported; send kind "unified" with a standard unified diff instead');
+  }
+  if (!["replace", "unified"].includes(raw.kind)) {
+    proposal.kind = fail(errors, "$.proposal.kind", 'must be "replace" or "unified"');
     return proposal;
   }
   proposal.kind = raw.kind;
@@ -140,20 +121,15 @@ function validateProposal(raw, errors, warnings) {
       raw, "content", "$.proposal.content",
       { max: MAX_CONTENT_CHARS, nonEmpty: false }, errors,
     );
-  } else if (!Array.isArray(raw.ops) || raw.ops.length === 0) {
-    proposal.ops = fail(errors, "$.proposal.ops", 'required, must be a non-empty array for kind "patch"');
-  } else if (raw.ops.length > MAX_OPS) {
-    proposal.ops = fail(errors, "$.proposal.ops", `must contain at most ${MAX_OPS} operations`);
   } else {
-    const ops = raw.ops.map((op, index) => validateOp(op, index, errors));
-    if (ops.every((op) => op !== undefined)) proposal.ops = ops;
+    proposal.diff = expectString(raw, "diff", "$.proposal.diff", { max: MAX_DIFF_CHARS }, errors);
   }
   reportUnknownKeys(raw, KNOWN_PROPOSAL_KEYS, "$.proposal", warnings);
   return proposal;
 }
 
 function validateOptions(raw, errors, warnings) {
-  const options = { allowDirectEdit: true, diffGranularity: "auto" };
+  const options = { allowDirectEdit: true };
   if (raw === undefined) return options;
   if (!isPlainObject(raw)) {
     fail(errors, "$.options", "must be an object when present");
@@ -164,13 +140,6 @@ function validateOptions(raw, errors, warnings) {
       fail(errors, "$.options.allowDirectEdit", "must be a boolean");
     } else {
       options.allowDirectEdit = raw.allowDirectEdit;
-    }
-  }
-  if (raw.diffGranularity !== undefined) {
-    if (!["auto", "block", "word"].includes(raw.diffGranularity)) {
-      fail(errors, "$.options.diffGranularity", 'must be one of "auto", "block", "word"');
-    } else {
-      options.diffGranularity = raw.diffGranularity;
     }
   }
   reportUnknownKeys(raw, KNOWN_OPTION_KEYS, "$.options", warnings);
@@ -230,54 +199,25 @@ export function parseEnvelope(input) {
   };
 }
 
-/**
- * Apply patch operations sequentially to raw source text. Each `find` must match
- * exactly once in the content as it stands when that op runs; anything else is
- * reported as an unresolved result rather than applied silently.
- */
-export function resolvePatch(base, ops) {
-  const results = [];
-  let content = base;
-
-  ops.forEach((op, index) => {
-    const record = { index, status: "applied" };
-    const first = content.indexOf(op.find);
-    if (first === -1) {
-      record.status = "not-found";
-      record.reason = `find text not present: "${excerpt(op.find)}"`;
-      results.push(record);
-      return;
-    }
-    if (content.indexOf(op.find, first + 1) !== -1) {
-      record.status = "ambiguous";
-      record.reason = `find text matches more than once: "${excerpt(op.find)}"`;
-      results.push(record);
-      return;
-    }
-    const end = first + op.find.length;
-    if (op.op === "replace") {
-      content = content.slice(0, first) + op.replace + content.slice(end);
-    } else if (op.op === "delete") {
-      content = content.slice(0, first) + content.slice(end);
-    } else if (op.op === "insertAfter") {
-      content = content.slice(0, end) + op.content + content.slice(end);
-    } else if (op.op === "insertBefore") {
-      content = content.slice(0, first) + op.content + content.slice(first);
-    } else {
-      record.status = "invalid";
-      record.reason = `unknown op "${op.op}"`;
-    }
-    results.push(record);
-  });
-
-  return { content, results };
-}
-
 /** Resolve an envelope's proposal into proposed document text. */
 export function applyProposal(doc, proposal) {
   if (proposal.kind === "replace") return { content: proposal.content, opResults: [] };
-  const { content, results } = resolvePatch(doc.content, proposal.ops ?? []);
-  return { content, opResults: results };
+  if (proposal.kind === "unified") {
+    const applied = applyUnifiedDiff(doc.content, proposal.diff ?? "");
+    if (applied.ok) return { content: applied.content, opResults: applied.results };
+    return {
+      content: doc.content,
+      opResults: [{
+        index: 0,
+        status: "malformed",
+        reason: applied.errors.map((entry) => entry.message).join("; "),
+      }],
+    };
+  }
+  return {
+    content: doc.content,
+    opResults: [{ index: 0, status: "malformed", reason: `unknown proposal kind "${proposal.kind}"` }],
+  };
 }
 
 function validateAnchor(raw, path, errors) {

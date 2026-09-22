@@ -23,7 +23,7 @@
         "title": { "type": "string", "minLength": 1, "maxLength": 300 },
         "format": { "enum": ["html", "markdown", "text"] },
         "revision": { "type": "integer", "minimum": 1, "description": "Base revision being reviewed." },
-        "content": { "type": "string", "description": "The current document, as source text." }
+        "content": { "type": "string", "maxLength": 2000000, "description": "The current document, as source text." }
       }
     },
     "proposal": {
@@ -31,40 +31,27 @@
       "required": ["kind"],
       "additionalProperties": true,
       "properties": {
-        "kind": { "enum": ["replace", "patch"] },
-        "content": { "type": "string", "description": "Required when kind is replace: the full proposed document." },
-        "ops": {
-          "type": "array",
-          "minItems": 1,
-          "maxItems": 2000,
-          "description": "Required when kind is patch. Applied sequentially to raw source text; each find must match exactly once.",
-          "items": { "$ref": "#/$defs/op" }
+        "kind": { "enum": ["replace", "unified"] },
+        "content": { "type": "string", "maxLength": 2000000, "description": "Required when kind is replace: the full proposed document." },
+        "diff": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000000,
+          "description": "Required when kind is unified: a standard unified diff (the output of git diff) against doc.content, applying at the exact lines it declares."
         },
         "summary": { "type": "string", "maxLength": 8000, "description": "Short human-facing description of the change." },
         "rationale": { "type": "string", "maxLength": 8000 }
       },
       "allOf": [
         { "if": { "properties": { "kind": { "const": "replace" } } }, "then": { "required": ["content"] } },
-        { "if": { "properties": { "kind": { "const": "patch" } } }, "then": { "required": ["ops"] } }
+        { "if": { "properties": { "kind": { "const": "unified" } } }, "then": { "required": ["diff"] } }
       ]
-    },
-    "op": {
-      "type": "object",
-      "required": ["op", "find"],
-      "additionalProperties": false,
-      "properties": {
-        "op": { "enum": ["replace", "delete", "insertAfter", "insertBefore"] },
-        "find": { "type": "string", "minLength": 1 },
-        "replace": { "type": "string", "description": "Required for op=replace." },
-        "content": { "type": "string", "description": "Required for op=insertAfter|insertBefore." }
-      }
     },
     "options": {
       "type": "object",
       "additionalProperties": true,
       "properties": {
-        "allowDirectEdit": { "type": "boolean", "default": true },
-        "diffGranularity": { "enum": ["auto", "block", "word"], "default": "auto" }
+        "allowDirectEdit": { "type": "boolean", "default": true }
       }
     }
   }

@@ -15,7 +15,6 @@
     "content": "<h1>Why review matters</h1>\n<p>Reviewing a change is harder than making one. A diff shows what moved, but never whether it should have moved at all.</p>\n<blockquote>Every edit is a claim about a reader who is not in the room.</blockquote>\n<p>So a reviewer does two jobs at once: check the facts, and judge the prose.</p>\n<ul>\n  <li>Check the facts</li>\n  <li>Judge the prose</li>\n  <li>Say what is missing</li>\n</ul>\n"
   },
   "options": {
-    "allowDirectEdit": true,
-    "diffGranularity": "auto"
+    "allowDirectEdit": true
   }
 }

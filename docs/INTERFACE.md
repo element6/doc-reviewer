@@ -56,15 +56,15 @@ not treat it as approval.
     "title": "Release notes",
     "format": "markdown",
     "revision": 3,
-    "content": "The current document, exactly as it stands."
+    "content": "Shipped on Jan 3.\n\nKnown issues: none.\n"
   },
   "proposal": {
-    "kind": "replace",
-    "content": "The whole document as you propose it should read.",
-    "summary": "Tightened the opening and fixed the date.",
+    "kind": "unified",
+    "diff": "diff --git a/notes-old.md b/notes-new.md\nindex 5a368f9..ecc1485 100644\n--- a/notes-old.md\n+++ b/notes-new.md\n@@ -1,3 +1,3 @@\n-Shipped on Jan 3.\n+Shipped on March 3.\n \n-Known issues: none.\n+Known issues: see the tracker.\n",
+    "summary": "Corrected the date and the known-issues line.",
     "rationale": "Optional. Why you made these changes."
   },
-  "options": { "allowDirectEdit": true, "diffGranularity": "auto" }
+  "options": { "allowDirectEdit": true }
 }
 ```
 
@@ -79,59 +79,64 @@ not treat it as approval.
 | `doc.format` | yes | `html`, `markdown`, or `text`. |
 | `doc.revision` | yes | Integer ≥ 1. Identifies the base you diffed against; echoed back. |
 | `doc.content` | yes | The current document as source text. May be empty. |
-| `proposal.kind` | yes | `replace` or `patch`. |
+| `proposal.kind` | yes | `unified` (preferred) or `replace`. |
 | `proposal.content` | for `replace` | The full proposed document. |
-| `proposal.ops` | for `patch` | 1–2000 operations, see below. |
+| `proposal.diff` | for `unified` | Standard unified diff of this one document, see below. |
 | `proposal.summary` | no | Short human-facing description, shown to the human. |
 | `proposal.rationale` | no | Shown to the human. |
 | `options.allowDirectEdit` | no | Default `true`. `false` makes the document read-only. |
-| `options.diffGranularity` | no | `auto` (default), `block`, or `word`. |
 
 Unknown fields are ignored with a warning, so you may add your own metadata. An unknown
 `schema` **version** is refused outright.
 
-### Prefer `replace`
+### `unified` (preferred)
 
-`replace` is strongly preferred: you send the whole proposed document and the reviewer
-computes the diff for you. It cannot fail, it needs no anchor guessing, and the human
-sees exactly the same red/green treatment either way.
+Send the output of `git diff` against the `doc.content` you were given. The reviewer
+applies it strictly:
 
-### `patch` operations
-
-Use `patch` only when you know a small, surgical edit and want to avoid re-sending a
-large document.
-
-| Op | Required fields | Effect |
-|---|---|---|
-| `replace` | `find`, `replace` | Replace the single occurrence of `find`. |
-| `delete` | `find` | Remove the single occurrence of `find`. |
-| `insertAfter` | `find`, `content` | Insert `content` immediately after `find`. |
-| `insertBefore` | `find`, `content` | Insert `content` immediately before `find`. |
-
-Rules:
-
-- Operations apply **sequentially**, each against the document as the earlier operations
-  left it. Order matters.
-- Each `find` must match **exactly once at the moment it runs**. If it matches zero
-  times the op is reported `not-found`; if it matches twice or more it is reported
-  `ambiguous`. An unresolved op is shown to the human as a notice and its change simply
-  does not land — it is never applied by guessing.
-- `find` matches raw source text for every format, including HTML. Include enough
-  surrounding context to be unique, and do not include markup you are not certain about.
-- Keep `find` short and literal. Do not use regular expressions; they are not supported.
+- **Strict context.** Each hunk applies only at the exact line its header declares,
+  checked against the original `doc.content` — no fuzzy searching and no offset search. A
+  hunk whose context does not match is reported back as `context-mismatch` and does not
+  land; the other hunks in the same diff still apply. A hunk whose declared counts
+  disagree with its body is reported as `malformed`.
+- **One document per envelope.** A diff whose file headers describe more than one file is
+  refused outright. Propose one document per envelope.
+- `\ No newline at end of file` and CRLF documents round-trip byte-for-byte.
 
 ```json
 {
   "schema": "doc-reviewer/envelope@1",
   "requestId": "fix-dates",
   "doc": { "id": "notes", "title": "Notes", "format": "markdown", "revision": 1,
-           "content": "Shipped on Jan 3.\n\nKnown issues: none." },
+           "content": "Shipped on Jan 3.\n\nKnown issues: none.\n" },
   "proposal": {
-    "kind": "patch",
-    "ops": [
-      { "op": "replace", "find": "Jan 3", "replace": "March 3" },
-      { "op": "replace", "find": "Known issues: none.", "replace": "Known issues: see tracker." }
-    ],
+    "kind": "unified",
+    "diff": "diff --git a/notes-old.md b/notes-new.md\nindex 5a368f9..ecc1485 100644\n--- a/notes-old.md\n+++ b/notes-new.md\n@@ -1,3 +1,3 @@\n-Shipped on Jan 3.\n+Shipped on March 3.\n \n-Known issues: none.\n+Known issues: see the tracker.\n",
+    "summary": "Corrected the date and the known-issues line."
+  }
+}
+```
+
+The `index`, `--- ` and `+++ ` header lines are accepted and ignored; the hunks are what
+matters. An envelope that still carries `ops`, or `kind: "patch"`, fails validation with a
+message naming `unified`.
+
+### `replace`
+
+Use `replace` only when you have the complete new text of the document. You send the
+whole proposed document and the reviewer computes the diff for you. It cannot fail and
+needs no anchor guessing, but it costs a full re-send of the document, so prefer
+`unified` for ordinary edits.
+
+```json
+{
+  "schema": "doc-reviewer/envelope@1",
+  "requestId": "fix-dates",
+  "doc": { "id": "notes", "title": "Notes", "format": "markdown", "revision": 1,
+           "content": "Shipped on Jan 3.\n\nKnown issues: none.\n" },
+  "proposal": {
+    "kind": "replace",
+    "content": "Shipped on March 3.\n\nKnown issues: see the tracker.\n",
     "summary": "Corrected the date and the known-issues line."
   }
 }
@@ -200,13 +205,15 @@ document has shifted.
 > Produce change requests for `doc-reviewer` as a single JSON object with
 > `schema: "doc-reviewer/envelope@1"`, a `requestId`, a `doc` object
 > (`id`, `title`, `format` one of `html|markdown|text`, `revision`, `content`), and a
-> `proposal` with `kind: "replace"` and the full proposed `content`, plus an optional
-> `summary`. Prefer `replace`. Output only the JSON, no commentary and no code fence.
-> Then tell the human to drop the file onto the reviewer page. When the human pastes
-> feedback back, read `result.content` as the new document, treat `hunks[].decision` as
-> the record of what was accepted or rejected, and act on every `comments[]` entry using
-> its `anchor.quote` plus context to locate the text. Never re-propose a change that came
-> back `rejected`.
+> `proposal` with `kind: "unified"` carrying `diff` — the standard unified diff output of
+> `git diff` against the `doc.content` you were given, for this one document only. Use
+> `kind: "replace"` with the full proposed `content` only when you already have the
+> complete new text. Add an optional `summary`. Output only the JSON, no commentary and
+> no code fence. Then tell the human to drop the file onto the reviewer page. When the
+> human pastes feedback back, read `result.content` as the new document, treat
+> `hunks[].decision` as the record of what was accepted or rejected, and act on every
+> `comments[]` entry using its `anchor.quote` plus context to locate the text. Never
+> re-propose a change that came back `rejected`.
 
 ## Versioning
 
@@ -220,7 +227,9 @@ version; changing the meaning of an existing field does.
 | Limit | Value |
 |---|---|
 | `doc.content` and `proposal.content` | 2,000,000 characters |
-| `proposal.ops` | 2,000 operations |
+| `proposal.diff` | 4,000,000 characters |
+| `proposal.summary` | 8,000 characters |
+| `proposal.rationale` | 8,000 characters |
 | Comment body | 8,000 characters |
 | Comments per review | 500 |
 | Inline `#d=` link payload | warn above 64 KB compressed, refuse above 512 KB |

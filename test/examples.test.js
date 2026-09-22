@@ -31,6 +31,8 @@ for (const file of files) {
       true,
       `examples/${file} failed validation: ${JSON.stringify(result.errors)}`,
     );
+    // A shipped example must not use fields the contract no longer knows.
+    assert.deepEqual(result.warnings, [], `examples/${file} warns: ${result.warnings.join("; ")}`);
     parsed = result.envelope;
 
     // An example that cannot be applied teaches nothing, so resolve the proposal too.
@@ -39,21 +41,23 @@ for (const file of files) {
     assert.notEqual(applied.content, parsed.doc.content, `examples/${file} proposes no change`);
     for (const record of applied.opResults) {
       assert.ok(
-        ["applied", "not-found", "ambiguous"].includes(record.status),
+        ["applied", "context-mismatch", "malformed"].includes(record.status),
         `unexpected op status ${record.status}`,
       );
     }
   });
 }
 
-test("the patch example demonstrates an unresolved operation on purpose", () => {
-  const result = parseEnvelope(readFileSync(path.join(EXAMPLES_DIR, "patch-deploy.dr.json"), "utf8"));
+test("the unified example applies its diff cleanly against its own document", () => {
+  const result = parseEnvelope(readFileSync(path.join(EXAMPLES_DIR, "unified-deploy.dr.json"), "utf8"));
   assert.equal(result.ok, true);
   const applied = applyProposal(result.envelope.doc, result.envelope.proposal);
-  assert.ok(
-    applied.opResults.some((record) => record.status === "not-found"),
-    "the patch example should show what a not-found operation looks like",
-  );
+  assert.ok(applied.opResults.length > 0, "the unified example should carry at least one hunk");
+  for (const record of applied.opResults) {
+    assert.equal(record.status, "applied", `hunk ${record.index} failed: ${record.reason ?? ""}`);
+  }
+  assert.ok(applied.content.includes("2. Run the migration."));
+  assert.ok(applied.content.includes("Rollback is documented in ops/runbook.md."));
 });
 
 test("the html example is an html document with several blocks", () => {

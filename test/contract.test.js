@@ -9,7 +9,6 @@ import {
   applyProposal,
   buildFeedback,
   parseEnvelope,
-  resolvePatch,
   validateFeedback,
 } from "../src/contract.js";
 
@@ -26,7 +25,7 @@ function envelope(overrides = {}) {
     schema: ENVELOPE_SCHEMA,
     requestId: "req-1",
     doc: DOC,
-    proposal: { kind: "patch", ops: [{ op: "replace", find: "world", replace: "there" }] },
+    proposal: { kind: "replace", content: "<p>Hello there</p>" },
     ...overrides,
   };
 }
@@ -49,7 +48,7 @@ test("parseEnvelope accepts a JSON string and an object alike", () => {
   assert.equal(fromString.ok, true);
   assert.equal(fromObject.ok, true);
   assert.deepEqual(fromString.envelope, fromObject.envelope);
-  assert.deepEqual(fromString.envelope.options, { allowDirectEdit: true, diffGranularity: "auto" });
+  assert.deepEqual(fromString.envelope.options, { allowDirectEdit: true });
   assert.equal(fromString.envelope.doc.content, "<p>Hello world</p>");
 });
 
@@ -70,10 +69,13 @@ test("parseEnvelope refuses an unsupported version but names it", () => {
 });
 
 test("parseEnvelope warns about unknown fields instead of failing", () => {
-  const result = parseEnvelope(envelope({ extra: true, doc: { ...DOC, mood: "calm" } }));
+  const result = parseEnvelope(
+    envelope({ extra: true, doc: { ...DOC, mood: "calm" }, options: { diffGranularity: "auto" } }),
+  );
   assert.equal(result.ok, true);
   assert.deepEqual(result.warnings, [
     "ignored unknown field $.doc.mood",
+    "ignored unknown field $.options.diffGranularity",
     "ignored unknown field $.extra",
   ]);
 });
@@ -83,8 +85,7 @@ test("parseEnvelope collects every field error at once", () => {
     schema: ENVELOPE_SCHEMA,
     requestId: "",
     doc: { id: "d1", title: "x".repeat(MAX_TITLE_CHARS + 1), format: "pdf", revision: 0, content: 7 },
-    proposal: { kind: "patch", ops: [] },
-    options: { diffGranularity: "line" },
+    proposal: { kind: "unified" },
   });
   assert.equal(result.ok, false);
   const paths = result.errors.map((error) => error.path).sort();
@@ -93,8 +94,7 @@ test("parseEnvelope collects every field error at once", () => {
     "$.doc.format",
     "$.doc.revision",
     "$.doc.title",
-    "$.options.diffGranularity",
-    "$.proposal.ops",
+    "$.proposal.diff",
     "$.requestId",
   ]);
 });
@@ -104,20 +104,26 @@ test("parseEnvelope requires the field each proposal kind needs", () => {
   assert.equal(noContent.ok, false);
   assert.equal(noContent.errors[0].path, "$.proposal.content");
 
-  const noOps = parseEnvelope(envelope({ proposal: { kind: "patch" } }));
-  assert.equal(noOps.ok, false);
-  assert.equal(noOps.errors[0].path, "$.proposal.ops");
+  const noDiff = parseEnvelope(envelope({ proposal: { kind: "unified" } }));
+  assert.equal(noDiff.ok, false);
+  assert.equal(noDiff.errors[0].path, "$.proposal.diff");
+});
 
-  const emptyOps = parseEnvelope(envelope({ proposal: { kind: "patch", ops: [] } }));
-  assert.equal(emptyOps.ok, false);
+test("the removed patch format fails validation naming the replacement", () => {
+  const kindPatch = parseEnvelope(envelope({ proposal: { kind: "patch" } }));
+  assert.equal(kindPatch.ok, false);
+  assert.ok(
+    kindPatch.errors.some((error) => error.path === "$.proposal.kind" && /unified/.test(error.message)),
+    JSON.stringify(kindPatch.errors),
+  );
 
-  const badOp = parseEnvelope(envelope({ proposal: { kind: "patch", ops: [{ op: "swap", find: "a" }] } }));
-  assert.equal(badOp.ok, false);
-  assert.equal(badOp.errors[0].path, "$.proposal.ops[0].op");
-
-  const missingReplace = parseEnvelope(envelope({ proposal: { kind: "patch", ops: [{ op: "replace", find: "a" }] } }));
-  assert.equal(missingReplace.ok, false);
-  assert.equal(missingReplace.errors[0].path, "$.proposal.ops[0].replace");
+  const opsSent = parseEnvelope(
+    envelope({ proposal: { kind: "unified", diff: "@@ -1 +1 @@\n-a\n+b\n", ops: [] } }),
+  );
+  assert.equal(opsSent.ok, false);
+  const opsError = opsSent.errors.find((error) => error.path === "$.proposal.ops");
+  assert.ok(opsError, JSON.stringify(opsSent.errors));
+  assert.match(opsError.message, /unified/);
 });
 
 test("an empty document content is valid", () => {
@@ -126,57 +132,36 @@ test("an empty document content is valid", () => {
   assert.equal(result.envelope.doc.content, "");
 });
 
-test("resolvePatch applies each operation sequentially", () => {
-  const { content, results } = resolvePatch("alpha beta", [
-    { op: "replace", find: "beta", replace: "gamma" },
-    { op: "insertAfter", find: "gamma", content: "!" },
-  ]);
-  assert.equal(content, "alpha gamma!");
-  assert.deepEqual(results.map((entry) => entry.status), ["applied", "applied"]);
-});
-
-test("resolvePatch implements every operation kind", () => {
-  assert.equal(resolvePatch("abc", [{ op: "delete", find: "b" }]).content, "ac");
-  assert.equal(resolvePatch("abc", [{ op: "insertBefore", find: "b", content: "X" }]).content, "aXbc");
-  assert.equal(resolvePatch("abc", [{ op: "insertAfter", find: "b", content: "X" }]).content, "abXc");
-  assert.equal(resolvePatch("abc", [{ op: "replace", find: "b", replace: "X" }]).content, "aXc");
-});
-
-test("resolvePatch refuses absent and ambiguous finds rather than guessing", () => {
-  const absent = resolvePatch("abc", [{ op: "delete", find: "zz" }]);
-  assert.equal(absent.content, "abc");
-  assert.equal(absent.results[0].status, "not-found");
-  assert.match(absent.results[0].reason, /not present/);
-
-  const ambiguous = resolvePatch("x x", [{ op: "delete", find: "x" }]);
-  assert.equal(ambiguous.content, "x x");
-  assert.equal(ambiguous.results[0].status, "ambiguous");
-  assert.match(ambiguous.results[0].reason, /more than once/);
-});
-
-test("resolvePatch keeps going after an unresolved op and reports each result", () => {
-  const { content, results } = resolvePatch("one two", [
-    { op: "delete", find: "missing" },
-    { op: "delete", find: "one " },
-  ]);
-  assert.equal(content, "two");
-  assert.deepEqual(results.map((entry) => entry.status), ["not-found", "applied"]);
-  assert.deepEqual(results.map((entry) => entry.index), [0, 1]);
-});
-
 test("applyProposal short-circuits a full replacement", () => {
   const replaced = applyProposal({ content: "old" }, { kind: "replace", content: "new" });
   assert.deepEqual(replaced, { content: "new", opResults: [] });
-  const patched = applyProposal({ content: "old" }, { kind: "patch", ops: [{ op: "delete", find: "old" }] });
-  assert.equal(patched.content, "");
-  assert.equal(patched.opResults.length, 1);
 });
 
-test("a long find string is truncated in the reported reason", () => {
-  const long = "z".repeat(200);
-  const { results } = resolvePatch("abc", [{ op: "delete", find: long }]);
-  assert.ok(results[0].reason.length < 100);
-  assert.match(results[0].reason, /\.\.\./);
+test("applyProposal applies a unified diff and reports each hunk", () => {
+  const applied = applyProposal(
+    { content: "alpha\nbeta\n" },
+    { kind: "unified", diff: "@@ -1,2 +1,2 @@\n alpha\n-beta\n+BETA\n" },
+  );
+  assert.equal(applied.content, "alpha\nBETA\n");
+  assert.deepEqual(applied.opResults, [{ index: 0, status: "applied" }]);
+});
+
+test("applyProposal leaves the document untouched when a hunk's context misses", () => {
+  const applied = applyProposal(
+    { content: "alpha\nbeta\n" },
+    { kind: "unified", diff: "@@ -1,2 +1,2 @@\n gamma\n-beta\n+BETA\n" },
+  );
+  assert.equal(applied.content, "alpha\nbeta\n");
+  assert.equal(applied.opResults[0].status, "context-mismatch");
+  assert.match(applied.opResults[0].reason, /line 1/);
+});
+
+test("applyProposal reports a structurally broken diff as malformed without changing the document", () => {
+  const applied = applyProposal({ content: "old" }, { kind: "unified", diff: "@@ not a header @@\n" });
+  assert.equal(applied.content, "old");
+  assert.equal(applied.opResults.length, 1);
+  assert.equal(applied.opResults[0].status, "malformed");
+  assert.match(applied.opResults[0].reason, /malformed hunk header/);
 });
 
 test("buildFeedback maps hunk text onto the schema field names", () => {
