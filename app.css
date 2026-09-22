@@ -156,6 +156,10 @@ ins { background: var(--success-soft); color: var(--success); text-decoration: n
 .pick-target { outline: 2px dashed var(--focus) !important; outline-offset: 2px; }
 mark.dr-highlight { background: #ffe8a3; color: inherit; border-radius: 2px; }
 
+/* Floating comment affordance for the current selection: fixed, above the
+   document, below the composer, which then covers it while open. */
+.selection-comment { position: fixed; z-index: 30; min-height: 0; padding: 4px 10px; font-size: 12px; }
+
 /* Comment composer floats over the page, outside re-rendered containers. */
 .composer { position: fixed; z-index: 40; width: min(300px, 88vw); border: 1px solid var(--line-strong); border-radius: var(--radius-md); background: var(--surface); box-shadow: var(--shadow); padding: 12px; }
 .composer-input { width: 100%; min-height: 84px; resize: vertical; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); padding: 8px 9px; font-size: 13px; }

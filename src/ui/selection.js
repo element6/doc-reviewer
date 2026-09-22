@@ -206,6 +206,90 @@ export function anchorFromElement(element, context) {
   });
 }
 
+let stashedRange = null;
+let affordance = null;
+let affordanceShown = false;
+
+function selectionRangeIn(root) {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return null;
+  const range = selection.getRangeAt(0);
+  return root.contains(range.commonAncestorContainer) ? range : null;
+}
+
+/**
+ * Most recent non-collapsed selection inside the root. Kept so commenting
+ * survives the selection collapse that clicking a control would otherwise
+ * cause, and cleared only by a mousedown inside the document (a new
+ * selection starting), never by a mousedown on a control.
+ */
+export function getStashedRange() {
+  return stashedRange;
+}
+
+function hideAffordance() {
+  affordanceShown = false;
+  if (affordance) affordance.style.display = "none";
+}
+
+function positionAffordance(rect) {
+  affordance.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - 96))}px`;
+  affordance.style.top = `${Math.max(8, Math.min(rect.bottom + 6, window.innerHeight - 36))}px`;
+}
+
+function ensureAffordance(onComment) {
+  if (affordance) return affordance;
+  affordance = document.createElement("button");
+  affordance.type = "button";
+  affordance.id = "selectionCommentButton";
+  affordance.className = "button selection-comment";
+  affordance.textContent = "Comment";
+  // Collapsing the selection on mousedown would destroy what the button acts on.
+  affordance.addEventListener("mousedown", (event) => event.preventDefault());
+  affordance.addEventListener("click", () => {
+    hideAffordance();
+    onComment();
+  });
+  document.body.append(affordance);
+  return affordance;
+}
+
+/**
+ * Track text selection inside `root`: stash the last non-collapsed range and
+ * surface a floating Comment affordance next to it. A mousedown inside the
+ * document starts a fresh selection and clears the stash; controls live
+ * outside `root`, so clicking them leaves the stash intact. Options:
+ * { root, onComment }.
+ */
+export function initSelectionTracking({ root, onComment }) {
+  const capture = () => {
+    const range = selectionRangeIn(root);
+    if (!range) return null;
+    stashedRange = range.cloneRange();
+    const button = ensureAffordance(onComment);
+    button.style.display = "";
+    affordanceShown = true;
+    positionAffordance(range.getBoundingClientRect());
+    return range;
+  };
+  document.addEventListener("selectionchange", () => {
+    if (!capture()) hideAffordance();
+  });
+  root.addEventListener("mouseup", capture);
+  root.addEventListener("mousedown", () => {
+    stashedRange = null;
+    hideAffordance();
+  });
+  // Escape dismisses the affordance only; the stash stays so `c` still comments
+  // on the same selection. Bubble phase so the composer's own Escape wins.
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && affordanceShown) hideAffordance();
+  });
+  window.addEventListener("scroll", () => {
+    if (affordanceShown && stashedRange) positionAffordance(stashedRange.getBoundingClientRect());
+  }, { capture: true, passive: true });
+}
+
 /**
  * Element picker: hover highlights the candidate, click picks it, Escape
  * cancels. Returns a stop function that removes every listener.

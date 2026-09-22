@@ -17,7 +17,7 @@ import { readEnvelopeFromFiles } from "./channels/file.js";
 import { copyText, readText } from "./channels/clipboard.js";
 import { isSupported as isFsSupported, pickDirectory, pollInbox, writeOutbox } from "./channels/fsaccess.js";
 import { renderDocument, setMode, getMode, defaultModeFor } from "./ui/doc-view.js";
-import { anchorFromRange, startElementPicker } from "./ui/selection.js";
+import { anchorFromRange, startElementPicker, initSelectionTracking, getStashedRange } from "./ui/selection.js";
 import { renderComments, showCommentComposer } from "./ui/comment-layer.js";
 import { renderReviewBar, bindShortcuts } from "./ui/review-bar.js";
 import { renderFeedback, deriveVerdict, countUndecided } from "./ui/feedback-panel.js";
@@ -353,13 +353,24 @@ function openComposer(anchor, rect) {
 function startComment() {
   if (!session) return;
   const selection = window.getSelection();
-  if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
-    notice("warning", "Select text in the document first, or use Pick element.");
-    return;
+  let range = null;
+  let liveOutside = false;
+  if (selection && selection.rangeCount > 0 && !selection.isCollapsed) {
+    const live = selection.getRangeAt(0);
+    if (els.docContainer.contains(live.commonAncestorContainer)) range = live;
+    else liveOutside = true;
   }
-  const range = selection.getRangeAt(0);
-  if (!els.docContainer.contains(range.commonAncestorContainer)) {
-    notice("warning", "That selection is outside the document.");
+  if (!range) {
+    // Clicking Comment collapses the live selection; fall back to the last
+    // real selection inside the document (controls never clear the stash).
+    const stashed = getStashedRange();
+    if (stashed && !stashed.collapsed && els.docContainer.contains(stashed.commonAncestorContainer)) {
+      range = stashed;
+    }
+  }
+  if (!range) {
+    if (liveOutside) notice("warning", "That selection is outside the document.");
+    else notice("warning", "Select text in the document, then press c or click Comment.");
     return;
   }
   const anchor = anchorFromRange(range, anchorContext());
@@ -577,6 +588,14 @@ function wireActions() {
   els.pickElementButton.setAttribute("aria-pressed", "false");
   els.pickElementButton.addEventListener("click", togglePicker);
   els.shareLinkButton.addEventListener("click", copyShareLink);
+  // Preventing the mousedown default keeps the text selection intact when a
+  // control is clicked, so commenting does not depend on the stash alone.
+  for (const control of [els.pickElementButton, els.reviewBar]) {
+    control.addEventListener("mousedown", (event) => {
+      if (event.target instanceof Element && event.target.closest("button")) event.preventDefault();
+    });
+  }
+  initSelectionTracking({ root: els.docContainer, onComment: startComment });
 }
 
 function wireUnloadGuard() {
