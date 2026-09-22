@@ -153,6 +153,202 @@ try {
   );
   check("the verdict is rejected after rejecting every hunk", rejected.verdict === "rejected", rejected.verdict);
 
+  // --- the comment affordance: text selection -> floating Comment -> anchor ---------
+  const selectSampleText = () =>
+    page.evaluate(() => {
+      const root = document.getElementById("docContainer");
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      let node = null;
+      while ((node = walker.nextNode())) {
+        if (node.data.length >= 60 && node.parentElement?.closest("[data-dr-block]")) break;
+      }
+      if (!node) return false;
+      const range = document.createRange();
+      range.setStart(node, 4);
+      range.setEnd(node, 44);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      return true;
+    });
+
+  check("sample text can be selected inside #docContainer", await selectSampleText());
+
+  const affordance = page.locator("#selectionCommentButton");
+  let affordanceShown = false;
+  try {
+    await affordance.waitFor({ state: "visible", timeout: 3000 });
+    affordanceShown = true;
+  } catch {
+    affordanceShown = false;
+  }
+  check("selecting text surfaces the floating Comment affordance", affordanceShown);
+
+  let textComposer = false;
+  if (affordanceShown) {
+    await affordance.click();
+    try {
+      await page.waitForSelector('[aria-label="Comment body"]', { timeout: 3000 });
+      textComposer = true;
+    } catch {
+      textComposer = false;
+    }
+  }
+  check("clicking the affordance opens the comment composer", textComposer);
+
+  if (textComposer) {
+    await page.locator('[aria-label="Comment body"]').fill("Text anchor probe");
+    await page.getByRole("button", { name: "Add comment" }).click();
+    await page.waitForTimeout(250);
+  }
+
+  const payloadAfterText = JSON.parse(await page.locator('[aria-label="Feedback payload JSON"]').inputValue());
+  const textComment = (payloadAfterText.comments ?? []).find((comment) => comment.body === "Text anchor probe");
+  check("the text comment lands in the feedback payload", Boolean(textComment), JSON.stringify(payloadAfterText.comments?.map((comment) => comment.body)));
+  const textAnchor = textComment?.anchor;
+  check(
+    "the text anchor carries quote, prefix, suffix, occurrence and offset",
+    Boolean(textAnchor)
+      && ["quote", "prefix", "suffix", "occurrence", "offset"].every((key) => key in textAnchor)
+      && typeof textAnchor.quote === "string" && textAnchor.quote.length > 0
+      && typeof textAnchor.prefix === "string" && typeof textAnchor.suffix === "string"
+      && Number.isInteger(textAnchor.occurrence)
+      && textAnchor.offset && Number.isInteger(textAnchor.offset.start) && Number.isInteger(textAnchor.offset.end)
+      && textAnchor.kind === "text",
+    JSON.stringify(textAnchor ?? null),
+  );
+  // What the next checks do NOT prove. They pass against the unfixed 2e25888
+  // sources as well: "the payload with the text comment validates" below
+  // (validateFeedback over zero new comments is vacuously ok), "the affordance
+  // hides once the selection is destroyed" (tautological when no affordance
+  // exists), "the review-bar Comment button opens the composer for a live
+  // selection" below, and "the final payload with all three comments validates"
+  // (after the picker section, vacuous for the same reason). The review-bar one
+  // passes because headless Chromium does NOT collapse the selection on a
+  // control's mousedown — proven with a real mouse drag against unfixed sources,
+  // not just programmatic selection — so no browser assertion can discriminate
+  // the preventDefault half of the fix. The collapse-then-Comment stash check
+  // below is the sole regression net for that root cause. The conclusion that
+  // matters most: the user's reported failure is explained by the MISSING
+  // AFFORDANCE (root cause 2), not by the mousedown collapse — they clicked
+  // Comment with nothing selected, were told to select text, and then got no
+  // affordance when they did. The affordance checks carry the regression value;
+  // the preventDefault change is hardening whose effect CI cannot observe. Keep
+  // the passing checks: they still assert correct behaviour, they are just not
+  // regression nets.
+  const textValidation = validateFeedback(payloadAfterText);
+  check("the payload with the text comment validates", textValidation.ok, JSON.stringify(textValidation.errors));
+  check("the affordance hides once the selection is destroyed", !(await affordance.isVisible()));
+
+  // --- the reported bug: selection, then the review-bar Comment button --------------
+  check("sample text can be re-selected", await selectSampleText());
+  let barComposer = false;
+  try {
+    await page.locator("#reviewBar").getByRole("button", { name: "Comment" }).click();
+    await page.waitForSelector('[aria-label="Comment body"]', { timeout: 3000 });
+    barComposer = true;
+  } catch {
+    barComposer = false;
+  }
+  // Not a regression net: passes against unfixed sources too (headless Chromium
+  // never collapses the selection on control mousedown) — see the note above.
+  check("the review-bar Comment button opens the composer for a live selection", barComposer);
+  if (barComposer) {
+    await page.locator('[aria-label="Comment body"]').fill("Review bar probe");
+    await page.getByRole("button", { name: "Add comment" }).click();
+    await page.waitForTimeout(250);
+  }
+  const payloadAfterBar = JSON.parse(await page.locator('[aria-label="Feedback payload JSON"]').inputValue());
+  check(
+    "the review-bar comment lands in the feedback payload",
+    (payloadAfterBar.comments ?? []).some((comment) => comment.body === "Review bar probe"),
+    JSON.stringify(payloadAfterBar.comments?.map((comment) => comment.body)),
+  );
+
+  // --- the stashed range: a live selection collapsed by a control must not be lost --
+  check("sample text can be selected for the stash check", await selectSampleText());
+  await page.evaluate(() => {
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount > 0) selection.collapseToStart();
+  });
+  await page.waitForTimeout(100);
+  let stashComposer = false;
+  try {
+    await page.locator("#reviewBar").getByRole("button", { name: "Comment" }).click();
+    await page.waitForSelector('[aria-label="Comment body"]', { timeout: 3000 });
+    stashComposer = true;
+  } catch {
+    stashComposer = false;
+  }
+  check("Comment opens the composer from the stashed range after the selection collapses", stashComposer);
+  if (stashComposer) await page.getByRole("button", { name: "Cancel" }).click();
+
+  // --- Escape dismisses the affordance but must not clear the stash ----------------
+  // Escape does not collapse the selection, so the live range is collapsed below
+  // before pressing c: otherwise the composer would open from the live selection
+  // and the check would prove nothing about stash survival.
+  check("sample text can be selected for the Escape check", await selectSampleText());
+  let escapeVisible = false;
+  try {
+    await affordance.waitFor({ state: "visible", timeout: 3000 });
+    escapeVisible = true;
+  } catch {
+    escapeVisible = false;
+  }
+  check("the affordance is visible before Escape", escapeVisible);
+  await page.keyboard.press("Escape");
+  check("Escape hides the affordance", escapeVisible && !(await affordance.isVisible()));
+  await page.evaluate(() => {
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount > 0) selection.collapseToStart();
+  });
+  await page.waitForTimeout(100);
+  let escapeStashComposer = false;
+  try {
+    await page.keyboard.press("c");
+    await page.waitForSelector('[aria-label="Comment body"]', { timeout: 3000 });
+    escapeStashComposer = true;
+  } catch {
+    escapeStashComposer = false;
+  }
+  check("pressing c after Escape still opens the composer from the stash", escapeStashComposer);
+  if (escapeStashComposer) await page.getByRole("button", { name: "Cancel" }).click();
+
+  // --- element picker: pick a block; the anchor must carry a selector ---------------
+  await page.locator("#pickElementButton").click();
+  let elementComposer = false;
+  try {
+    await page.locator("#docContainer [data-dr-block]").first().click();
+    await page.waitForSelector('[aria-label="Comment body"]', { timeout: 3000 });
+    elementComposer = true;
+  } catch {
+    elementComposer = false;
+  }
+  check("picking an element opens the comment composer", elementComposer);
+  if (elementComposer) {
+    await page.locator('[aria-label="Comment body"]').fill("Element anchor probe");
+    await page.getByRole("button", { name: "Add comment" }).click();
+    await page.waitForTimeout(250);
+  }
+  const payloadFinal = JSON.parse(await page.locator('[aria-label="Feedback payload JSON"]').inputValue());
+  const elementComment = (payloadFinal.comments ?? []).find((comment) => comment.body === "Element anchor probe");
+  const elementAnchor = elementComment?.anchor;
+  check(
+    "the element anchor carries a selector",
+    Boolean(elementAnchor)
+      && typeof elementAnchor.selector === "string" && elementAnchor.selector.length > 0
+      && elementAnchor.kind === "element",
+    JSON.stringify(elementAnchor ?? null),
+  );
+  // Vacuous against unfixed sources (their payload gains no new comments here);
+  // see the note above "the payload with the text comment validates".
+  const finalValidation = validateFeedback(payloadFinal);
+  check("the final payload with all three comments validates", finalValidation.ok, JSON.stringify(finalValidation.errors));
+  check(
+    "the picker disarms after a pick",
+    (await page.locator("#pickElementButton").getAttribute("aria-pressed")) === "false",
+  );
+
   // --- the sanitizer's DOM walk, which node cannot exercise ------------------------
   mkdirSync(path.join(ROOT, ".tmp"), { recursive: true });
   const hostilePath = path.join(ROOT, ".tmp", "hostile.dr.json");
