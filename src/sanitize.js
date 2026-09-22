@@ -87,7 +87,14 @@ export function isAllowedAttribute(tagName, attrName, attrValue) {
   // name added to the platform later is still refused.
   if (name.startsWith("on")) return false;
   if (name === "srcdoc") return false;
-  if (name === "style") return !UNSAFE_STYLE.test(String(attrValue ?? ""));
+  if (name === "style") {
+    const value = String(attrValue ?? "");
+    // A backslash begins a CSS escape: "\75 rl(https://x)" IS `url(https://x)` once the
+    // browser decodes it, and UNSAFE_STYLE cannot see through the escape. Refuse any
+    // escaped value outright rather than attempting to decode CSS here.
+    if (value.includes("\\")) return false;
+    return !UNSAFE_STYLE.test(value);
+  }
   const allowed = ALLOWED_ATTRS[tag] ?? [];
   const shared = ALLOWED_ATTRS["*"] ?? [];
   if (!allowed.includes(name) && !shared.includes(name)) return false;
@@ -119,6 +126,11 @@ function scrub(node, doc) {
       continue;
     }
     if (!isAllowedTag(tag)) {
+      // Scrub the subtree BEFORE unwrapping. unwrap promotes this element's children into
+      // the parent, but the loop above iterates a snapshot taken before that promotion, so
+      // a promoted <style>, <meta> or <iframe> would never be visited — unwrap would
+      // launder it straight past REMOVE_WITH_CONTENT.
+      scrub(child, doc);
       unwrap(child);
       continue;
     }

@@ -227,6 +227,18 @@ test("the sanitizer policy refuses script vectors and allows prose markup", () =
   assert.equal(isAllowedAttribute("img", "onerror", "alert(1)"), false);
   assert.equal(isAllowedAttribute("p", "onclick", "alert(1)"), false);
   assert.equal(isAllowedAttribute("p", "style", "background:url(javascript:1)"), false);
+  // CSS escapes decode in the browser, so "\75 rl(...)" IS `url(...)` to a CSS parser while
+  // a literal-token regex cannot see it. Independent verification found this bypass; any
+  // escaped value must be refused outright rather than decoded here.
+  assert.equal(isAllowedAttribute("p", "style", "background-image:\\75 rl(https://evil.example/x)"), false);
+  assert.equal(isAllowedAttribute("p", "style", "color:\\65 xpression(alert(1))"), false);
+  assert.equal(isAllowedAttribute("p", "style", "background:\\0075rl(https://evil.example/x)"), false);
+  assert.equal(isAllowedAttribute("p", "style", "width:\\65 xpression(alert(1))"), false);
+  // A backslash anywhere in a style value is refused, so no escape can smuggle a token past.
+  assert.equal(isAllowedAttribute("p", "style", "color:re\\64"), false);
+  // The ordinary, unescaped declarations must still be allowed, or the policy is useless.
+  assert.equal(isAllowedAttribute("p", "style", "color: red"), true);
+  assert.equal(isAllowedAttribute("p", "style", "text-align: center"), true);
 });
 
 test("fragment parsing recognizes both channels and rejects junk", () => {
