@@ -1,0 +1,21 @@
+{
+  "schema": "doc-reviewer/envelope@1",
+  "requestId": "example-markdown-1",
+  "doc": {
+    "id": "release-notes",
+    "title": "Release notes",
+    "format": "markdown",
+    "revision": 1,
+    "content": "Release notes\n\nVersion 1.4 ships on Jan 3. It focuses on the review flow.\n\nKnown issues: none.\n\nThe next release is planned for the spring.\n"
+  },
+  "proposal": {
+    "kind": "replace",
+    "summary": "Corrected the ship date, sharpened the opening, and noted the tracker for known issues.",
+    "rationale": "The date was wrong, and the opening buried the point.",
+    "content": "Release notes\n\nVersion 1.4 ships on March 3, and it focuses on the review flow.\n\nKnown issues: see the tracker.\n\nThe next release is planned for the spring.\n"
+  },
+  "options": {
+    "allowDirectEdit": true,
+    "diffGranularity": "auto"
+  }
+}

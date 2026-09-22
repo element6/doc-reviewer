@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://doc-reviewer/schema/feedback-1.schema.json",
+  "title": "doc-reviewer feedback@1",
+  "description": "The review UI hands this back to the AI: per-hunk decisions, anchored comments, and the final document.",
+  "type": "object",
+  "required": ["schema", "requestId", "doc", "verdict", "result", "hunks", "comments"],
+  "additionalProperties": true,
+  "properties": {
+    "schema": { "const": "doc-reviewer/feedback@1" },
+    "requestId": { "type": "string", "minLength": 1 },
+    "doc": {
+      "type": "object",
+      "required": ["id", "revision"],
+      "properties": {
+        "id": { "type": "string" },
+        "revision": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "verdict": { "enum": ["accepted", "rejected", "changes-requested"] },
+    "result": {
+      "type": "object",
+      "required": ["format", "content"],
+      "properties": {
+        "format": { "enum": ["html", "markdown", "text"] },
+        "content": { "type": "string", "description": "Final document after accepted hunks and manual edits." }
+      }
+    },
+    "hunks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "decision", "base", "proposed"],
+        "properties": {
+          "id": { "type": "string" },
+          "decision": { "enum": ["accepted", "rejected", "edited", "unresolved"] },
+          "base": { "type": "string" },
+          "proposed": { "type": "string" }
+        }
+      }
+    },
+    "comments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "body", "createdAt", "anchor"],
+        "properties": {
+          "id": { "type": "string" },
+          "body": { "type": "string", "maxLength": 8000 },
+          "createdAt": { "type": "string" },
+          "anchor": { "$ref": "#/$defs/anchor" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "anchor": {
+      "type": "object",
+      "description": "W3C Web Annotation text-quote selector, plus a CSS selector for element anchors.",
+      "required": ["kind", "quote", "prefix", "suffix", "occurrence", "offset"],
+      "properties": {
+        "kind": { "enum": ["text", "element"] },
+        "quote": { "type": "string", "maxLength": 4000, "description": "The selected text, or the element's textContent." },
+        "prefix": { "type": "string", "description": "Up to 40 chars immediately before the quote." },
+        "suffix": { "type": "string", "description": "Up to 40 chars immediately after the quote." },
+        "occurrence": { "type": "integer", "minimum": 0, "description": "Zero-based index of this match among identical quotes." },
+        "offset": {
+          "type": "object",
+          "required": ["start", "end"],
+          "properties": {
+            "start": { "type": "integer", "minimum": 0 },
+            "end": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "selector": { "type": "string", "description": "CSS selector path, present for element anchors in HTML documents." },
+        "blockId": { "type": "string" },
+        "label": { "type": "string", "description": "Human-readable location, e.g. \"<strong> in paragraph 3\"." }
+      }
+    }
+  }
+}

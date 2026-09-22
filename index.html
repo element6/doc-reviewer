@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src data: https:; connect-src https:">
+  <title>doc-reviewer</title>
+  <link rel="stylesheet" href="./app.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">dr</span>
+      <div>
+        <p class="brand-name">doc-reviewer</p>
+        <div class="brand-tagline">Review AI-proposed document changes, hunk by hunk.</div>
+      </div>
+    </div>
+    <div class="doc-meta" id="docMeta">
+      <span class="meta-title" id="docTitle">No document loaded</span>
+      <span class="badge" id="formatBadge" hidden></span>
+      <span class="badge" id="revisionBadge" hidden></span>
+      <span class="badge badge-verdict" id="verdictBadge" hidden></span>
+    </div>
+  </header>
+
+  <main>
+    <div class="notice notice-error" id="errorSurface" role="alert" hidden>
+      <div class="notice-body">
+        <strong>Envelope rejected</strong>
+        <ul id="errorList"></ul>
+      </div>
+      <button class="button ghost" id="dismissError" type="button">Dismiss</button>
+    </div>
+
+    <div id="notices"></div>
+
+    <section class="panel empty-state" id="emptyState" aria-labelledby="emptyTitle">
+      <h2 id="emptyTitle">Start a review</h2>
+      <p class="empty-lede">
+        Load a <code>doc-reviewer/envelope@1</code> JSON envelope from an AI, or start a
+        blank document and review edits on your own.
+      </p>
+      <ul class="channel-list">
+        <li><strong>Paste</strong> an envelope into the box below.</li>
+        <li><strong>Drop</strong> a <code>.dr.json</code> file anywhere on this page, or
+          <button class="button ghost inline-action" id="pickFileButton" type="button">choose a file</button>.</li>
+        <li><strong>Open</strong> a <code>#d=</code> envelope link or a <code>#src=</code> URL link.</li>
+        <li><strong>Pick</strong> an exchange directory
+          <button class="button inline-action" id="exchangeButton" type="button" hidden>Pick exchange directory</button>
+          to watch its inbox for new envelopes.</li>
+      </ul>
+
+      <label class="sr-only" for="pasteBox">Envelope JSON</label>
+      <textarea class="paste-box" id="pasteBox" spellcheck="false"
+                placeholder='{"schema": "doc-reviewer/envelope@1", ...}'></textarea>
+      <div class="button-row">
+        <button class="button primary" id="loadPaste" type="button">Review pasted envelope</button>
+        <input type="file" id="fileInput" accept=".json,.dr.json,application/json" hidden>
+      </div>
+
+      <div class="blank-start">
+        <label class="control-label" for="blankFormat">Blank document</label>
+        <select class="select" id="blankFormat">
+          <option value="html">HTML</option>
+          <option value="markdown" selected>Markdown</option>
+          <option value="text">Text</option>
+        </select>
+        <button class="button" id="blankStart" type="button">Start blank document</button>
+      </div>
+    </section>
+
+    <section id="workspace" hidden>
+      <article class="panel doc-panel" aria-labelledby="docPanelTitle">
+        <header class="panel-header">
+          <div>
+            <h2 class="panel-title" id="docPanelTitle">Document</h2>
+            <span class="panel-meta" id="docPanelMeta"></span>
+          </div>
+          <div class="button-row">
+            <button class="button" id="pickElementButton" type="button"
+                    title="Comment on a page element: click it, Escape cancels">Pick element</button>
+            <button class="button" id="shareLinkButton" type="button"
+                    title="Encode this envelope into a shareable #d= link">Copy share link</button>
+          </div>
+        </header>
+        <div class="editor-wrap" id="docWrap">
+          <div class="comment-layer" id="commentLayer"></div>
+          <div class="review-body" id="docContainer" tabindex="-1"></div>
+        </div>
+        <div class="review-bar" id="reviewBar"></div>
+      </article>
+
+      <article class="panel feedback-panel" aria-labelledby="feedbackTitle">
+        <header class="panel-header">
+          <div>
+            <h2 class="panel-title" id="feedbackTitle">Feedback for the AI</h2>
+            <span class="panel-meta">The JSON payload you send back</span>
+          </div>
+        </header>
+        <div class="feedback-body" id="feedbackPanel"></div>
+      </article>
+    </section>
+  </main>
+
+  <noscript>
+    <p class="notice notice-error visible">doc-reviewer is a client-side application and needs JavaScript.</p>
+  </noscript>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+{
+  "name": "doc-reviewer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Serverless review UI for AI-proposed document changes.",
+  "scripts": {
+    "test": "node --test",
+    "check": "find src test -name '*.js' -exec node --check {} +",
+    "dev": "node scripts/dev-server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

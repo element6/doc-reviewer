@@ -1,0 +1,25 @@
+{
+  "schema": "doc-reviewer/envelope@1",
+  "requestId": "example-patch-1",
+  "doc": {
+    "id": "ops-checklist",
+    "title": "Deploy checklist",
+    "format": "text",
+    "revision": 7,
+    "content": "Deploy checklist\n\n1. Run the test suite.\n2. Tag the release.\n3. Announce in the channel.\n\nRollback is documented in the runbook.\n"
+  },
+  "proposal": {
+    "kind": "patch",
+    "summary": "Added the migration step and pointed rollback at the right runbook.",
+    "rationale": "A migration step was missing, and the rollback pointer was vague.",
+    "ops": [
+      { "op": "insertAfter", "find": "1. Run the test suite.\n", "content": "2. Run the migration.\n" },
+      { "op": "replace", "find": "documented in the runbook", "replace": "documented in ops/runbook.md" },
+      { "op": "delete", "find": "This text does not exist, so the operation reports not-found." }
+    ]
+  },
+  "options": {
+    "allowDirectEdit": true,
+    "diffGranularity": "auto"
+  }
+}

@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://doc-reviewer/schema/envelope-1.schema.json",
+  "title": "doc-reviewer envelope@1",
+  "description": "An AI hands this to the review UI to propose a change to a document.",
+  "type": "object",
+  "required": ["schema", "requestId", "doc", "proposal"],
+  "additionalProperties": true,
+  "properties": {
+    "schema": { "const": "doc-reviewer/envelope@1" },
+    "requestId": { "type": "string", "minLength": 1, "description": "Opaque id echoed back in feedback." },
+    "doc": { "$ref": "#/$defs/doc" },
+    "proposal": { "$ref": "#/$defs/proposal" },
+    "options": { "$ref": "#/$defs/options" }
+  },
+  "$defs": {
+    "doc": {
+      "type": "object",
+      "required": ["id", "title", "format", "revision", "content"],
+      "additionalProperties": true,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "format": { "enum": ["html", "markdown", "text"] },
+        "revision": { "type": "integer", "minimum": 1, "description": "Base revision being reviewed." },
+        "content": { "type": "string", "description": "The current document, as source text." }
+      }
+    },
+    "proposal": {
+      "type": "object",
+      "required": ["kind"],
+      "additionalProperties": true,
+      "properties": {
+        "kind": { "enum": ["replace", "patch"] },
+        "content": { "type": "string", "description": "Required when kind is replace: the full proposed document." },
+        "ops": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2000,
+          "description": "Required when kind is patch. Applied sequentially to raw source text; each find must match exactly once.",
+          "items": { "$ref": "#/$defs/op" }
+        },
+        "summary": { "type": "string", "maxLength": 8000, "description": "Short human-facing description of the change." },
+        "rationale": { "type": "string", "maxLength": 8000 }
+      },
+      "allOf": [
+        { "if": { "properties": { "kind": { "const": "replace" } } }, "then": { "required": ["content"] } },
+        { "if": { "properties": { "kind": { "const": "patch" } } }, "then": { "required": ["ops"] } }
+      ]
+    },
+    "op": {
+      "type": "object",
+      "required": ["op", "find"],
+      "additionalProperties": false,
+      "properties": {
+        "op": { "enum": ["replace", "delete", "insertAfter", "insertBefore"] },
+        "find": { "type": "string", "minLength": 1 },
+        "replace": { "type": "string", "description": "Required for op=replace." },
+        "content": { "type": "string", "description": "Required for op=insertAfter|insertBefore." }
+      }
+    },
+    "options": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "allowDirectEdit": { "type": "boolean", "default": true },
+        "diffGranularity": { "enum": ["auto", "block", "word"], "default": "auto" }
+      }
+    }
+  }
+}
