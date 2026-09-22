@@ -38,6 +38,11 @@ jobs:
         run: node scripts/smoke.mjs
       - name: Sanitizer DOM probe
         run: node scripts/sanitize-dom-probe.mjs
+      # The unified-diff path is the app's headline feature and is only partly reachable
+      # from node: the suite proves a diff is APPLIED correctly, but only a browser proves
+      # it is RENDERED as a reviewable change.
+      - name: Unified-diff path probe
+        run: node scripts/unified-path-probe.mjs
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
