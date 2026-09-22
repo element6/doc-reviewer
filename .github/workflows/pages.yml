@@ -22,9 +22,22 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      # The app ships as-is, so the test suite is the only gate that matters.
-      - name: Test
+      # The app ships as-is, so the unit suite is the fast gate.
+      - name: Unit tests
         run: node --test
+      # The ONLY executed verification of sanitizeHtml's DOM walk is the browser smoke
+      # test: `node --test` cannot run it, because sanitizeHtml needs a document and the
+      # app deliberately has no dependencies. Without this step the security boundary is
+      # ungated, so a regression there would publish with every unit test still green.
+      # Playwright is installed for CI only; the shipped app stays dependency-free.
+      - name: Install browser for the DOM tests
+        run: |
+          npm install --no-save playwright
+          npx playwright install --with-deps chromium
+      - name: Browser smoke test
+        run: node scripts/smoke.mjs
+      - name: Sanitizer DOM probe
+        run: node scripts/sanitize-dom-probe.mjs
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
