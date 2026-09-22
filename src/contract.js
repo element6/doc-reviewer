@@ -208,7 +208,7 @@ export function applyProposal(doc, proposal) {
     return {
       content: doc.content,
       opResults: [{
-        index: 0,
+        scope: "diff",
         status: "malformed",
         reason: applied.errors.map((entry) => entry.message).join("; "),
       }],
@@ -216,8 +216,19 @@ export function applyProposal(doc, proposal) {
   }
   return {
     content: doc.content,
-    opResults: [{ index: 0, status: "malformed", reason: `unknown proposal kind "${proposal.kind}"` }],
+    opResults: [{ scope: "diff", status: "malformed", reason: `unknown proposal kind "${proposal.kind}"` }],
   };
+}
+
+/**
+ * Render one failed op result for a human-facing notice. Whole-diff failures carry
+ * scope "diff" and no hunk index, so they never read as "hunk #1".
+ */
+export function describeFailure(result) {
+  if (result.scope === "diff") {
+    return `the diff is malformed${result.reason ? `: ${result.reason}` : ""}`;
+  }
+  return `hunk #${result.index + 1} ${result.status}${result.reason ? ` (${result.reason})` : ""}`;
 }
 
 function validateAnchor(raw, path, errors) {

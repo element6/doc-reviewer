@@ -58,10 +58,16 @@ MAX_RATIONALE_CHARS, MAX_COMMENT_CHARS, MAX_COMMENTS
 class ContractError extends Error { errors: [{path, message}] }
 
 parseEnvelope(input)        -> { ok: true, envelope, warnings } | { ok: false, errors }
-applyProposal(doc, proposal)-> { content, opResults: [{ index, status, reason? }] }
+applyProposal(doc, proposal)-> { content, opResults: [hunkResult | diffFailure] }
 buildFeedback(input)        -> feedback object
 validateFeedback(raw)       -> { ok, errors }
+describeFailure(result)     -> notice line for one failed op result
 ```
+
+`hunkResult` is `{ index, status, reason? }`. A structural failure of the diff itself —
+not of one hunk — yields a single `diffFailure` `{ scope: "diff", status: "malformed",
+reason }` with no `index`; `describeFailure` renders a `diffFailure` as "the diff is
+malformed: …" and a `hunkResult` as "hunk #N …".
 
 `status` is one of `"applied"`, `"context-mismatch"`, `"malformed"`: a unified hunk that
 matched its declared lines, one that did not match the base there, and one whose declared

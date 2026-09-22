@@ -7,7 +7,7 @@
  * prove the app RENDERS it, which is the part the owner actually asked for. scripts/
  * smoke.mjs covers the `replace` path and the sanitizer; this covers the `unified` path.
  *
- * Development only, like the other two: run it by hand when the proposal path changes.
+ * Runs in CI (pages.yml) and by hand locally when the proposal path changes.
  *
  *   NODE_PATH=<somewhere-with-playwright>/node_modules node scripts/unified-path-probe.mjs
  *
